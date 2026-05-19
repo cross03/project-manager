@@ -21,17 +21,20 @@ USERS_FILE = "users.json"
 PROJECTS_FILE = "projects.json"
 TASKS_FILE = "tasks.json"
 COMMENTS_FILE = "comments.json"
-MESSAGES_FILE = "messages.json"
 
-def load_data(filename):
+def load_data(filename, default_dict=True):
     if os.path.exists(filename):
         with open(filename, 'r') as f:
-            return json.load(f)
-    return {} if filename.endswith('.json') else []
+            data = json.load(f)
+            # Если файл существует и это список, а мы ожидаем словарь
+            if default_dict and isinstance(data, list):
+                return {}
+            return data
+    return {} if default_dict else []
 
 def save_data(filename, data):
     with open(filename, 'w') as f:
-        json.dump(data, f, indent=2)
+        json.dump(data, f, indent=2, ensure_ascii=False)
 
 # Инициализация
 if not os.path.exists(USERS_FILE):
@@ -50,9 +53,6 @@ if not os.path.exists(TASKS_FILE):
 if not os.path.exists(COMMENTS_FILE):
     save_data(COMMENTS_FILE, {})
 
-if not os.path.exists(MESSAGES_FILE):
-    save_data(MESSAGES_FILE, [])
-
 # Модели
 class LoginData(BaseModel):
     username: str
@@ -62,16 +62,6 @@ class RegisterData(BaseModel):
     username: str
     password: str
     email: str
-
-class UserCreate(BaseModel):
-    username: str
-    password: str
-    email: str
-    role: str = "user"
-
-class UserUpdate(BaseModel):
-    email: Optional[str] = None
-    role: Optional[str] = None
 
 class ProjectData(BaseModel):
     id: Optional[int] = None
@@ -89,14 +79,9 @@ class TaskData(BaseModel):
     status: str = "todo"
     priority: str = "medium"
     tags: List[str] = []
-    assignees: List[str] = []  # Изменено: теперь массив
+    assignees: List[str] = []
     due_date: Optional[str] = None
     created_by: str
-
-class CommentData(BaseModel):
-    task_id: int
-    user: str
-    text: str
 
 # API Users
 @app.post("/api/login")
@@ -125,7 +110,7 @@ def get_all_users(username: str):
 @app.get("/api/projects/{project_id}/users")
 def get_project_users(project_id: int, username: str):
     users = load_data(USERS_FILE)
-    projects = load_data(PROJECTS_FILE)
+    projects = load_data(PROJECTS_FILE, default_dict=False)
     if username not in users:
         raise HTTPException(401, "Unauthorized")
     project = next((p for p in projects if p["id"] == project_id), None)
@@ -133,58 +118,11 @@ def get_project_users(project_id: int, username: str):
         raise HTTPException(404, "Project not found")
     return project.get("assignees", [])
 
-@app.post("/api/admin/users")
-def create_user(data: UserCreate, admin_username: str):
-    users = load_data(USERS_FILE)
-    if admin_username not in users or users[admin_username].get("role") != "admin":
-        raise HTTPException(403, "Only admin can create users")
-    if data.username in users:
-        raise HTTPException(400, "Username exists")
-    users[data.username] = {"password": data.password, "email": data.email, "role": data.role, "created_at": datetime.now().isoformat()}
-    save_data(USERS_FILE, users)
-    return {"success": True}
-
-@app.get("/api/users")
-def get_users(username: str):
-    users = load_data(USERS_FILE)
-    if username not in users:
-        raise HTTPException(401, "Unauthorized")
-    if users[username].get("role") == "admin":
-        return [{"username": u, "email": d["email"], "role": d.get("role", "user"), "created_at": d.get("created_at")} for u, d in users.items()]
-    return [{"username": username, "email": users[username]["email"], "role": users[username].get("role", "user")}]
-
-@app.put("/api/users/{target_username}")
-def update_user(target_username: str, data: UserUpdate, username: str):
-    users = load_data(USERS_FILE)
-    if username not in users or users[username].get("role") != "admin":
-        raise HTTPException(403, "Permission denied")
-    if target_username not in users:
-        raise HTTPException(404, "User not found")
-    if data.email:
-        users[target_username]["email"] = data.email
-    if data.role:
-        users[target_username]["role"] = data.role
-    save_data(USERS_FILE, users)
-    return {"success": True}
-
-@app.delete("/api/users/{target_username}")
-def delete_user(target_username: str, username: str):
-    users = load_data(USERS_FILE)
-    if username not in users or users[username].get("role") != "admin":
-        raise HTTPException(403, "Permission denied")
-    if target_username == username:
-        raise HTTPException(400, "Cannot delete yourself")
-    if target_username not in users:
-        raise HTTPException(404, "User not found")
-    del users[target_username]
-    save_data(USERS_FILE, users)
-    return {"success": True}
-
 # API Projects
 @app.get("/api/projects")
 def get_projects(username: str):
     users = load_data(USERS_FILE)
-    projects = load_data(PROJECTS_FILE)
+    projects = load_data(PROJECTS_FILE, default_dict=False)
     if username not in users:
         raise HTTPException(401, "Unauthorized")
     role = users[username].get("role", "user")
@@ -200,7 +138,7 @@ def create_project(project: ProjectData, username: str):
     role = users[username].get("role", "user")
     if role not in ["admin", "editor"]:
         raise HTTPException(403, "Permission denied")
-    projects = load_data(PROJECTS_FILE)
+    projects = load_data(PROJECTS_FILE, default_dict=False)
     new_id = max([p.get("id", 0) for p in projects] + [0]) + 1
     new_project = {
         "id": new_id,
@@ -221,10 +159,7 @@ def update_project(project_id: int, project: ProjectData, username: str):
     users = load_data(USERS_FILE)
     if username not in users:
         raise HTTPException(401, "Unauthorized")
-    role = users[username].get("role", "user")
-    if role not in ["admin", "editor"]:
-        raise HTTPException(403, "Permission denied")
-    projects = load_data(PROJECTS_FILE)
+    projects = load_data(PROJECTS_FILE, default_dict=False)
     for i, p in enumerate(projects):
         if p["id"] == project_id:
             projects[i] = {**p, "name": project.name, "description": project.description, "status": project.status, "assignees": project.assignees, "deadline": project.deadline}
@@ -237,8 +172,8 @@ def delete_project(project_id: int, username: str):
     users = load_data(USERS_FILE)
     if username not in users or users[username].get("role") != "admin":
         raise HTTPException(403, "Permission denied")
-    projects = load_data(PROJECTS_FILE)
-    tasks = load_data(TASKS_FILE)
+    projects = load_data(PROJECTS_FILE, default_dict=False)
+    tasks = load_data(TASKS_FILE, default_dict=False)
     projects = [p for p in projects if p["id"] != project_id]
     tasks = [t for t in tasks if t["project_id"] != project_id]
     save_data(PROJECTS_FILE, projects)
@@ -251,15 +186,19 @@ def get_tasks(project_id: int, username: str):
     users = load_data(USERS_FILE)
     if username not in users:
         raise HTTPException(401, "Unauthorized")
-    tasks = load_data(TASKS_FILE)
-    return [t for t in tasks if t["project_id"] == project_id]
+    tasks = load_data(TASKS_FILE, default_dict=False)
+    role = users[username].get("role", "user")
+    project_tasks = [t for t in tasks if t["project_id"] == project_id]
+    if role in ["admin", "editor"]:
+        return project_tasks
+    return [t for t in project_tasks if username in t.get("assignees", [])]
 
 @app.post("/api/tasks")
 def create_task(task: TaskData, username: str):
     users = load_data(USERS_FILE)
     if username not in users:
         raise HTTPException(401, "Unauthorized")
-    tasks = load_data(TASKS_FILE)
+    tasks = load_data(TASKS_FILE, default_dict=False)
     new_id = max([t.get("id", 0) for t in tasks] + [0]) + 1
     new_task = {
         "id": new_id,
@@ -283,7 +222,7 @@ def update_task(task_id: int, task_data: dict, username: str):
     users = load_data(USERS_FILE)
     if username not in users:
         raise HTTPException(401, "Unauthorized")
-    tasks = load_data(TASKS_FILE)
+    tasks = load_data(TASKS_FILE, default_dict=False)
     for i, t in enumerate(tasks):
         if t["id"] == task_id:
             tasks[i].update(task_data)
@@ -296,146 +235,78 @@ def delete_task(task_id: int, username: str):
     users = load_data(USERS_FILE)
     if username not in users:
         raise HTTPException(401, "Unauthorized")
-    tasks = load_data(TASKS_FILE)
+    tasks = load_data(TASKS_FILE, default_dict=False)
     tasks = [t for t in tasks if t["id"] != task_id]
     save_data(TASKS_FILE, tasks)
     return {"success": True}
 
-# API Comments
+# API Comments for Tasks
 @app.get("/api/tasks/{task_id}/comments")
 def get_task_comments(task_id: int, username: str):
     users = load_data(USERS_FILE)
     if username not in users:
         raise HTTPException(401, "Unauthorized")
     comments = load_data(COMMENTS_FILE)
-    return comments.get(str(task_id), [])
+    key = f"task_{task_id}"
+    return comments.get(key, [])
 
 @app.post("/api/comments")
-def create_comment(comment: CommentData, username: str):
+def create_task_comment(data: dict, username: str):
+    users = load_data(USERS_FILE)
+    if username not in users:
+        raise HTTPException(401, "Unauthorized")
+
+    comments = load_data(COMMENTS_FILE)
+    task_id = data.get("task_id")
+    key = f"task_{task_id}"
+
+    if key not in comments:
+        comments[key] = []
+
+    new_comment = {
+        "id": len(comments[key]) + 1,
+        "user": data.get("user"),
+        "text": data.get("text"),
+        "created_at": datetime.now().isoformat()
+    }
+    comments[key].append(new_comment)
+    save_data(COMMENTS_FILE, comments)
+    return new_comment
+
+# API Comments for Projects
+@app.get("/api/projects/{project_id}/comments")
+def get_project_comments(project_id: int, username: str):
     users = load_data(USERS_FILE)
     if username not in users:
         raise HTTPException(401, "Unauthorized")
     comments = load_data(COMMENTS_FILE)
-    task_id_str = str(comment.task_id)
-    if task_id_str not in comments:
-        comments[task_id_str] = []
+    key = f"project_{project_id}"
+    return comments.get(key, [])
+
+@app.post("/api/comments-project")
+def create_project_comment(data: dict, username: str):
+    users = load_data(USERS_FILE)
+    if username not in users:
+        raise HTTPException(401, "Unauthorized")
+
+    comments = load_data(COMMENTS_FILE)
+    project_id = data.get("project_id")
+    key = f"project_{project_id}"
+
+    if key not in comments:
+        comments[key] = []
+
     new_comment = {
-        "id": len(comments[task_id_str]) + 1,
-        "user": comment.user,
-        "text": comment.text,
+        "id": len(comments[key]) + 1,
+        "user": data.get("user"),
+        "text": data.get("text"),
         "created_at": datetime.now().isoformat()
     }
-    comments[task_id_str].append(new_comment)
+    comments[key].append(new_comment)
     save_data(COMMENTS_FILE, comments)
     return new_comment
-
-# API Messages
-@app.get("/api/messages/{username}")
-def get_messages(username: str, current_user: str):
-    users = load_data(USERS_FILE)
-    if current_user not in users:
-        raise HTTPException(401, "Unauthorized")
-    messages = load_data(MESSAGES_FILE)
-    user_messages = [m for m in messages if m["to_user"] == username or m["from_user"] == username]
-    return user_messages
-
-@app.post("/api/messages")
-def send_message(message: MessageData, current_user: str):
-    users = load_data(USERS_FILE)
-    if current_user not in users:
-        raise HTTPException(401, "Unauthorized")
-    messages = load_data(MESSAGES_FILE)
-    new_message = {
-        "id": len(messages) + 1,
-        "from_user": message.from_user,
-        "to_user": message.to_user,
-        "text": message.text,
-        "read": False,
-        "created_at": datetime.now().isoformat()
-    }
-    messages.append(new_message)
-    save_data(MESSAGES_FILE, messages)
-    return new_message
-
-@app.put("/api/messages/{message_id}/read")
-def mark_message_read(message_id: int, current_user: str):
-    users = load_data(USERS_FILE)
-    if current_user not in users:
-        raise HTTPException(401, "Unauthorized")
-    messages = load_data(MESSAGES_FILE)
-    for m in messages:
-        if m["id"] == message_id and m["to_user"] == current_user:
-            m["read"] = True
-            save_data(MESSAGES_FILE, messages)
-            return {"success": True}
-    raise HTTPException(404, "Message not found")
 
 if __name__ == "__main__":
     import uvicorn
-    from datetime import timedelta
     print("\n🚀 Server running on http://0.0.0.0:8000")
     uvicorn.run(app, host="0.0.0.0", port=8000)
-
-# API Comments for Projects
-@app.get("/api/projects/{project_id}/comments")
-def get_project_comments(project_id: int, username: str):
-    users = load_data(USERS_FILE)
-    if username not in users:
-        raise HTTPException(401, "Unauthorized")
-    comments = load_data(COMMENTS_FILE)
-    key = f"project_{project_id}"
-    return comments.get(key, [])
-
-@app.post("/api/comments-project")
-def create_project_comment(comment: dict, username: str):
-    users = load_data(USERS_FILE)
-    if username not in users:
-        raise HTTPException(401, "Unauthorized")
-
-    comments = load_data(COMMENTS_FILE)
-    key = f"project_{comment.get('project_id')}"
-
-    if key not in comments:
-        comments[key] = []
-
-    new_comment = {
-        "id": len(comments[key]) + 1,
-        "user": comment.get("user"),
-        "text": comment.get("text"),
-        "created_at": datetime.now().isoformat()
-    }
-    comments[key].append(new_comment)
-    save_data(COMMENTS_FILE, comments)
-    return new_comment
-
-# API Comments for Projects
-@app.get("/api/projects/{project_id}/comments")
-def get_project_comments(project_id: int, username: str):
-    users = load_data(USERS_FILE)
-    if username not in users:
-        raise HTTPException(401, "Unauthorized")
-    comments = load_data(COMMENTS_FILE)
-    key = f"project_{project_id}"
-    return comments.get(key, [])
-
-@app.post("/api/comments-project")
-def create_project_comment(comment_data: dict, username: str):
-    users = load_data(USERS_FILE)
-    if username not in users:
-        raise HTTPException(401, "Unauthorized")
-
-    comments = load_data(COMMENTS_FILE)
-    key = f"project_{comment_data.get('project_id')}"
-
-    if key not in comments:
-        comments[key] = []
-
-    new_comment = {
-        "id": len(comments[key]) + 1,
-        "user": comment_data.get("user"),
-        "text": comment_data.get("text"),
-        "created_at": datetime.now().isoformat()
-    }
-    comments[key].append(new_comment)
-    save_data(COMMENTS_FILE, comments)
-    return new_comment

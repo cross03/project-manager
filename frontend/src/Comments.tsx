@@ -1,40 +1,30 @@
 import React, { useState, useEffect } from 'react';
 import {
   Box, Typography, Card, CardContent, TextField, Button,
-  Avatar, List, ListItem, ListItemAvatar, ListItemText,
-  Paper, Chip, Autocomplete
+  Avatar, List, ListItem, ListItemAvatar, ListItemText, Popper, Paper
 } from '@mui/material';
 import SendIcon from '@mui/icons-material/Send';
 import axios from 'axios';
 
 const API_URL = 'http://10.221.8.140:8000';
 
-function Comments({ type, targetId, token, username, users }: {
-  type: string;
-  targetId: number;
-  token: string;
-  username: string;
-  users?: string[];
-}) {
+function Comments({ projectId, token, username }: { projectId: number; token: string; username: string }) {
   const [comments, setComments] = useState<any[]>([]);
   const [newComment, setNewComment] = useState('');
+  const [users, setUsers] = useState<string[]>([]);
+  const [mentionOpen, setMentionOpen] = useState(false);
+  const [mentionAnchor, setMentionAnchor] = useState<null | HTMLElement>(null);
   const [mentionQuery, setMentionQuery] = useState('');
-  const [showMentions, setShowMentions] = useState(false);
   const [cursorPosition, setCursorPosition] = useState(0);
-  const [allUsers, setAllUsers] = useState<string[]>([]);
 
   useEffect(() => {
     loadComments();
-    if (users && users.length > 0) {
-      setAllUsers(users);
-    } else {
-      loadUsers();
-    }
+    loadUsers();
   }, []);
 
   const loadComments = async () => {
     try {
-      const response = await axios.get(`${API_URL}/api/comments/${type}/${targetId}?username=${token}`);
+      const response = await axios.get(`${API_URL}/api/projects/${projectId}/comments?username=${token}`);
       setComments(response.data);
     } catch (error) {
       console.error('Failed to load comments:', error);
@@ -44,190 +34,132 @@ function Comments({ type, targetId, token, username, users }: {
   const loadUsers = async () => {
     try {
       const response = await axios.get(`${API_URL}/api/all-users?username=${token}`);
-      setAllUsers(response.data);
+      setUsers(response.data);
     } catch (error) {
       console.error('Failed to load users:', error);
     }
   };
 
-  const handleCommentChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
-    setNewComment(value);
-
-    const cursorPos = e.target.selectionStart || 0;
-    const textBeforeCursor = value.substring(0, cursorPos);
-    const lastAtIndex = textBeforeCursor.lastIndexOf('@');
-
-    if (lastAtIndex !== -1) {
-      const query = textBeforeCursor.substring(lastAtIndex + 1);
-      const hasSpace = query.includes(' ');
-      if (!hasSpace && query.length < 30 && query.length >= 0) {
-        setMentionQuery(query);
-        setShowMentions(true);
-        setCursorPosition(cursorPos);
-      } else {
-        setShowMentions(false);
-      }
-    } else {
-      setShowMentions(false);
-    }
-  };
-
-  const insertMention = (user: string) => {
-    const beforeMention = newComment.substring(0, cursorPosition);
-    const afterCursor = newComment.substring(cursorPosition);
-    const lastAtIndex = beforeMention.lastIndexOf('@');
-    const beforeAt = beforeMention.substring(0, lastAtIndex);
-    const newText = `${beforeAt}@${user} ${afterCursor}`;
-    setNewComment(newText);
-    setShowMentions(false);
-  };
-
   const sendComment = async () => {
-    if (!newComment.trim()) {
-      console.log('Comment is empty');
-      return;
-    }
-
-    console.log('Sending comment:', { type, targetId, user: username, text: newComment });
-
+    if (!newComment.trim()) return;
     try {
-      const response = await axios.post(`${API_URL}/api/comments?username=${token}`, {
-        type: type,
-        target_id: targetId,
+      await axios.post(`${API_URL}/api/comments-project?username=${token}`, {
+        project_id: projectId,
         user: username,
         text: newComment
       });
-      console.log('Comment sent:', response.data);
       setNewComment('');
-      await loadComments();
-    } catch (error: any) {
-      console.error('Failed to send comment:', error.response?.data || error.message);
-      alert('Ошибка при отправке комментария: ' + (error.response?.data?.detail || error.message));
+      loadComments();
+    } catch (error) {
+      console.error('Failed to send comment:', error);
+      alert('Failed to send comment');
     }
   };
 
-  const filteredUsers = allUsers.filter(u =>
-    u !== username && u.toLowerCase().includes(mentionQuery.toLowerCase())
-  );
+  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const newValue = e.target.value;
+    setNewComment(newValue);
 
-  const renderCommentText = (text: string) => {
-    const parts = text.split(/(@\w+)/g);
-    return parts.map((part, idx) => {
-      if (part.startsWith('@')) {
-        const userName = part.substring(1);
-        if (allUsers.includes(userName)) {
-          return (
-            <Chip
-              key={idx}
-              label={part}
-              size="small"
-              color="primary"
-              variant="outlined"
-              sx={{ mx: 0.5, cursor: 'pointer', display: 'inline-flex' }}
-            />
-          );
-        }
-      }
-      return <span key={idx}>{part}</span>;
-    });
+    const cursorPos = e.target.selectionStart;
+    const textBeforeCursor = newValue.substring(0, cursorPos);
+    const lastAtIndex = textBeforeCursor.lastIndexOf('@');
+
+    const showMentions = lastAtIndex !== -1 &&
+                         cursorPos > lastAtIndex &&
+                         !textBeforeCursor.substring(lastAtIndex + 1).includes(' ');
+
+    if (showMentions) {
+      const query = textBeforeCursor.substring(lastAtIndex + 1);
+      setMentionQuery(query);
+      setMentionAnchor(e.target);
+      setMentionOpen(true);
+      setCursorPosition(cursorPos);
+      return;
+    }
+    setMentionOpen(false);
   };
+
+  const selectUser = (selectedUser: string) => {
+    const beforeMention = newComment.substring(0, cursorPosition);
+    const lastAtIndex = beforeMention.lastIndexOf('@');
+    const newValue = beforeMention.substring(0, lastAtIndex) + `@${selectedUser} ` + newComment.substring(cursorPosition);
+    setNewComment(newValue);
+    setMentionOpen(false);
+  };
+
+  const filteredUsers = users.filter(user =>
+    user.toLowerCase().includes(mentionQuery.toLowerCase()) && user !== ''
+  );
 
   return (
     <Box sx={{ mt: 3 }}>
-      <Typography variant="h6" gutterBottom>
-        Комментарии {type === 'project' ? 'к проекту' : 'к задаче'}
-      </Typography>
-      <Typography variant="caption" color="text.secondary" sx={{ mb: 2, display: 'block' }}>
-        💡 Используйте @имя_пользователя чтобы упомянуть коллегу
-      </Typography>
-
+      <Typography variant="h6" gutterBottom>Comments</Typography>
       <Card>
         <CardContent>
           <List>
-            {comments.length === 0 ? (
-              <ListItem>
-                <ListItemText primary="Нет комментариев" sx={{ textAlign: 'center', color: 'text.secondary' }} />
-              </ListItem>
-            ) : (
-              comments.map(comment => (
-                <ListItem key={comment.id} alignItems="flex-start">
-                  <ListItemAvatar>
-                    <Avatar>{comment.user[0].toUpperCase()}</Avatar>
-                  </ListItemAvatar>
-                  <ListItemText
-                    primary={
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-                        <Typography variant="subtitle2">{comment.user}</Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          {new Date(comment.created_at).toLocaleString()}
-                        </Typography>
-                      </Box>
-                    }
-                    secondary={
-                      <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', mt: 0.5 }}>
-                        {renderCommentText(comment.text)}
+            {comments.map(comment => (
+              <ListItem key={comment.id} alignItems="flex-start">
+                <ListItemAvatar>
+                  <Avatar>{comment.user[0].toUpperCase()}</Avatar>
+                </ListItemAvatar>
+                <ListItemText
+                  primary={comment.user}
+                  secondary={
+                    <React.Fragment>
+                      <Typography component="span" variant="body2" color="text.primary">
+                        {comment.text}
                       </Typography>
-                    }
-                  />
-                </ListItem>
-              ))
-            )}
+                      <br />
+                      <Typography component="span" variant="caption" color="text.secondary">
+                        {new Date(comment.created_at).toLocaleString()}
+                      </Typography>
+                    </React.Fragment>
+                  }
+                />
+              </ListItem>
+            ))}
           </List>
-
-          <Box sx={{ position: 'relative', mt: 2 }}>
+          <Box sx={{ display: 'flex', gap: 1, mt: 2, position: 'relative' }}>
             <TextField
               fullWidth
               size="small"
-              placeholder="Напишите комментарий... Используйте @ для упоминания"
+              placeholder="Write a comment... Use @ to mention someone"
               value={newComment}
-              onChange={handleCommentChange}
+              onChange={handleChange}
+              onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey && sendComment()}
               multiline
-              rows={3}
-              sx={{ mb: 1 }}
+              maxRows={3}
             />
+            <Button variant="contained" onClick={sendComment} endIcon={<SendIcon />}>
+              Send
+            </Button>
 
-            {showMentions && filteredUsers.length > 0 && (
-              <Paper
-                sx={{
-                  position: 'absolute',
-                  bottom: '100%',
-                  left: 0,
-                  right: 0,
-                  maxHeight: 200,
-                  overflow: 'auto',
-                  zIndex: 10,
-                  boxShadow: 3,
-                  mb: 1
-                }}
-              >
-                <List dense>
-                  {filteredUsers.map(user => (
-                    <ListItem
+            <Popper open={mentionOpen} anchorEl={mentionAnchor} placement="top-start" style={{ zIndex: 1300 }}>
+              <Paper sx={{ maxHeight: 200, overflow: 'auto' }}>
+                {filteredUsers.length > 0 ? (
+                  filteredUsers.map(user => (
+                    <Button
                       key={user}
-                      onClick={() => insertMention(user)}
-                      sx={{ cursor: 'pointer', '&:hover': { bgcolor: 'action.hover' } }}
+                      onClick={() => selectUser(user)}
+                      sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 1,
+                        p: 1,
+                        width: '100%',
+                        justifyContent: 'flex-start',
+                        textTransform: 'none'
+                      }}
                     >
-                      <ListItemAvatar>
-                        <Avatar sx={{ width: 24, height: 24, fontSize: 14 }}>{user[0].toUpperCase()}</Avatar>
-                      </ListItemAvatar>
-                      <ListItemText primary={user} />
-                    </ListItem>
-                  ))}
-                </List>
+                      <Avatar sx={{ width: 24, height: 24 }}>{user[0].toUpperCase()}</Avatar>
+                      {user}
+                    </Button>
+                  ))
+                ) : (
+                  <Box sx={{ p: 1, color: 'text.secondary' }}>Type to search users...</Box>
+                )}
               </Paper>
-            )}
-
-            <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <Button
-                variant="contained"
-                onClick={sendComment}
-                endIcon={<SendIcon />}
-                size="small"
-              >
-                Отправить
-              </Button>
-            </Box>
+            </Popper>
           </Box>
         </CardContent>
       </Card>

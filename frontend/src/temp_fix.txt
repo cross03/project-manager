@@ -1,0 +1,11 @@
+      {selectedTask && (
+        <TaskDetailDialog
+          task={selectedTask}
+          userRole={userRole}
+          open={openTaskDetail}
+          onClose={() => setOpenTaskDetail(false)}
+          onUpdate={onTaskUpdate}
+          token={token}
+          users={projectUsers}
+        />
+      )}

@@ -1,0 +1,3 @@
+            {activeTab === 'comments' && (
+              <Comments projectId={project.id} token={user.username} username={user.username} users={allUsers} />
+            )}

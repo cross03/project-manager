@@ -661,13 +661,7 @@ function ProjectDetail({ project, user, onBack, allUsers }: any) {
             )}
 
             {activeTab === 'comments' && (
-              <Comments
-                type="project"
-                targetId={project.id}
-                token={user.username}
-                username={user.username}
-                users={allUsers}
-              />
+              <Comments projectId={project.id} token={user.username} username={user.username} />
             )}
 
             {activeTab === 'stats' && (
