@@ -1,0 +1,31 @@
+# Зависимости
+node_modules/
+venv/
+__pycache__/
+*.pyc
+
+# Сборки
+build/
+dist/
+*.tar.gz
+
+# Логи
+*.log
+.pm2/
+
+# Данные (JSON файлы с пользовательскими данными)
+backend/users.json
+backend/projects.json
+backend/tasks.json
+backend/comments.json
+backend/messages.json
+backend/notifications.json
+backend/uploads/
+
+# Конфиги
+.env
+*.env
+
+# IDE
+.vscode/
+.idea/

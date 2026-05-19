@@ -1,0 +1,44 @@
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -32,6 +32,7 @@ function App() {
+   const [selectedProject, setSelectedProject] = useState<any>(null);
+   const [showMessages, setShowMessages] = useState(false);
+   const [allUsers, setAllUsers] = useState<string[]>([]);
++  const [openChatWith, setOpenChatWith] = useState<string | null>(null);
+
+   useEffect(() => {
+     const savedUser = localStorage.getItem('user');
+@@ -67,7 +68,11 @@ function App() {
+   if (showMessages) {
+     return (
+       <>
+-        <AppBar position="static">
++        <AppBar position="static">
+           <Toolbar>
+             <Typography variant="h6" sx={{ flexGrow: 1 }}>
+               💬 Сообщения
+@@ -78,9 +83,10 @@ function App() {
+         </AppBar>
+         <Container sx={{ mt: 4, mb: 4 }}>
+           <Messages username={user.username} allUsers={allUsers} initialChatWith={openChatWith} />
+         </Container>
+       </>
+     );
+   }
+
+   if (selectedProject) {
+     return <ProjectDetail project={selectedProject} user={user} onBack={() => setSelectedProject(null)} allUsers={allUsers} />;
+@@ -98,6 +104,7 @@ function Dashboard({ user, onLogout, onManageUsers, onSelectProject, allUsers, o
+   const [editingProject, setEditingProject] = useState<any>(null);
+   const [formData, setFormData] = useState({
+     name: '',
+     description: '',
+@@ -209,7 +216,7 @@ function Dashboard({ user, onLogout, onManageUsers, onSelectProject, allUsers, o
+             <Typography variant="h6" sx={{ flexGrow: 1 }}>
+               📊 Project Manager
+             </Typography>
+-            <Notifications username={user.username} />
++            <Notifications username={user.username} onOpenChat={(chatUser) => onOpenMessages(chatUser)} />
+             <IconButton color="inherit" onClick={onOpenMessages}>
+               <ForumIcon />
+             </IconButton>

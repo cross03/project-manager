@@ -1,0 +1,33 @@
+{
+  "admin": {
+    "password": "admin123",
+    "email": "admin@example.com",
+    "created_at": "2026-05-07T07:54:19.588511",
+    "role": "admin"
+  },
+  "editor1": {
+    "password": "editor123",
+    "email": "editor1@example.com",
+    "role": "editor",
+    "created_at": "2024-01-01T00:00:00"
+  },
+  "user1": {
+    "password": "user123",
+    "email": "user1@example.com",
+    "role": "user",
+    "created_at": "2024-01-01T00:00:00"
+  },
+  "ivan.ivanov": {
+    "password": "12345678",
+    "email": "ivan.ivanov@rimera.com",
+    "role": "user",
+    "created_at": "2026-05-07T10:39:45.644231",
+    "created_by_admin": "admin"
+  },
+  "user2": {
+    "password": "12345678",
+    "email": "user2@rimera.com",
+    "role": "user",
+    "created_at": "2026-05-07T12:45:10.275396"
+  }
+}
