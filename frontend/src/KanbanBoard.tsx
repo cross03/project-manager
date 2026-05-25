@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  Box, Typography, Card, CardContent, Button, Chip, Grid, IconButton,
+  Box, Typography, Card, CardContent, CardActions, Button,
   TextField, Dialog, DialogTitle, DialogContent, DialogActions,
-  FormControl, InputLabel, Select, MenuItem, Autocomplete, Tooltip,
-  Snackbar, Alert
+  IconButton, Chip, Grid, MenuItem, Select, FormControl, InputLabel,
+  Autocomplete, Tooltip, Snackbar, Alert
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
@@ -88,14 +88,20 @@ function AutoExpandingTextarea({ value, onChange, placeholder, margin = 'dense',
   );
 }
 
-function KanbanBoard({ projectId, token, userRole }: { projectId: number; token: string; userRole: string }) {
+function KanbanBoard({ projectId, token, userRole, initialTaskId, highlightCommentId, autoOpen }: {
+  projectId: number;
+  token: string;
+  userRole: string;
+  initialTaskId?: number;
+  highlightCommentId?: number;
+  autoOpen?: boolean;
+}) {
   const [tasks, setTasks] = useState<any[]>([]);
   const [projectUsers, setProjectUsers] = useState<string[]>([]);
   const [openDialog, setOpenDialog] = useState(false);
   const [openTaskDetail, setOpenTaskDetail] = useState(false);
   const [editingTask, setEditingTask] = useState<any>(null);
   const [selectedTask, setSelectedTask] = useState<any>(null);
-  const [draggedTask, setDraggedTask] = useState<any>(null);
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'info' | 'warning' | 'error' }>({
     open: false,
     message: '',
@@ -116,10 +122,21 @@ function KanbanBoard({ projectId, token, userRole }: { projectId: number; token:
     try {
       const response = await axios.get(`${API_URL}/api/projects/${projectId}/tasks?username=${token}`);
       setTasks(response.data);
+
+      if (initialTaskId) {
+        const shouldOpen = autoOpen !== false;
+        if (shouldOpen && !selectedTask) {
+          const task = response.data.find((t: any) => t.id === initialTaskId);
+          if (task) {
+            setSelectedTask({ ...task, highlightCommentId });
+            setOpenTaskDetail(true);
+          }
+        }
+      }
     } catch (error) {
       console.error('Failed to load tasks:', error);
     }
-  }, [projectId, token]);
+  }, [projectId, token, initialTaskId, highlightCommentId, autoOpen, selectedTask]);
 
   const loadProjectUsers = useCallback(async () => {
     try {
@@ -140,7 +157,6 @@ function KanbanBoard({ projectId, token, userRole }: { projectId: number; token:
 
   const handleDragStart = (e: React.DragEvent, task: any) => {
     e.dataTransfer.setData('text/plain', JSON.stringify(task));
-    setDraggedTask(task);
   };
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -176,7 +192,6 @@ function KanbanBoard({ projectId, token, userRole }: { projectId: number; token:
       console.error('Failed to move task:', error);
       setSnackbar({ open: true, message: 'Failed to move task', severity: 'error' });
     }
-    setDraggedTask(null);
   };
 
   const handleCloseSnackbar = () => setSnackbar({ ...snackbar, open: false });
@@ -383,6 +398,7 @@ function KanbanBoard({ projectId, token, userRole }: { projectId: number; token:
           onUpdate={onTaskUpdate}
           token={token}
           users={projectUsers}
+          highlightCommentId={selectedTask.highlightCommentId}
         />
       )}
 

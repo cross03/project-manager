@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import Container from '@mui/material/Container';
@@ -38,191 +38,47 @@ import Comments from './Comments';
 import ProjectStats from './ProjectStats';
 import GanttChart from './GanttChart';
 import NotificationCenter from './NotificationCenter';
+import { NavigationProvider, useNavigation } from './NavigationContext';
 
 const API_URL = 'http://10.221.8.140:8000';
 
-function App() {
+function AppContent() {
+  const [navigationTarget, setNavigationTarget] = useState<{ taskId?: number; commentId?: number } | null>(null);
+  const { pendingTaskId, pendingCommentId, clearNavigation } = useNavigation();
+
+  useEffect(() => {
+    if (pendingTaskId) {
+      setNavigationTarget({ taskId: pendingTaskId, commentId: pendingCommentId || undefined });
+      clearNavigation();
+    }
+  }, [pendingTaskId, pendingCommentId]);
+
+  useEffect(() => {
+    if (navigationTarget && projects.length > 0) {
+      const handleNavigation = async () => {
+        try {
+          const taskResponse = await axios.get(`${API_URL}/api/tasks/${navigationTarget.taskId}?username=${user?.username}`);
+          const task = taskResponse.data;
+          const project = projects.find(p => p.id === task.project_id);
+          if (project) {
+            setSelectedProject({
+              ...project,
+              highlightTaskId: navigationTarget.taskId,
+              highlightCommentId: navigationTarget.commentId,
+              scrollToTask: true,
+              openTaskDetail: true
+            });
+          }
+        } catch (error) {
+          console.error(Failed
   const [user, setUser] = useState<any>(null);
   const [showUsersManagement, setShowUsersManagement] = useState(false);
   const [selectedProject, setSelectedProject] = useState<any>(null);
   const [allUsers, setAllUsers] = useState<string[]>([]);
   const [projects, setProjects] = useState<any[]>([]);
+  const { pendingTaskId, pendingCommentId, clearNavigation } = useNavigation();
 
-  const [urlProjectId, setUrlProjectId] = useState<string | null>(null);
-  const [urlTaskId, setUrlTaskId] = useState<string | null>(null);
-  const [urlCommentId, setUrlCommentId] = useState<string | null>(null);
 
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    setUrlProjectId(params.get('projectId'));
-    setUrlTaskId(params.get('taskId'));
-    setUrlCommentId(params.get('commentId'));
-  }, []);
-
-  useEffect(() => {
-    const savedUser = localStorage.getItem('user');
-    if (savedUser) {
-      setUser(JSON.parse(savedUser));
-    }
-    loadAllUsers();
-  }, []);
-
-  useEffect(() => {
-    if (user && projects.length > 0 && urlProjectId) {
-      const project = projects.find(p => p.id === parseInt(urlProjectId));
-      if (project) {
-        setSelectedProject({
-          ...project,
-          highlightTaskId: urlTaskId ? parseInt(urlTaskId) : undefined,
-          highlightCommentId: urlCommentId ? parseInt(urlCommentId) : undefined,
-          scrollToTask: !!urlTaskId,
-          openTaskDetail: !!urlTaskId
-        });
-        window.history.replaceState({}, '', '/');
-      }
-    }
-  }, [user, projects, urlProjectId, urlTaskId, urlCommentId]);
-
-  const loadAllUsers = async () => {
-    if (!user?.username) return;
-    try {
-      const response = await axios.get(`${API_URL}/api/all-users?username=${user.username}`);
-      setAllUsers(response.data);
-    } catch (error) {
-      console.error('Failed to load users:', error);
-    }
-  };
-
-  const loadProjects = async () => {
-    if (!user?.username) return;
-    try {
-      const response = await axios.get(`${API_URL}/api/projects?username=${user.username}`);
-      setProjects(response.data);
-    } catch (error) {
-      console.error('Failed to load projects:', error);
-    }
-  };
-
-  useEffect(() => {
-    if (user) {
-      loadProjects();
-    }
-  }, [user]);
-
-  if (!user) {
-    return <Login onLogin={(userData: any) => {
-      setUser(userData);
-      localStorage.setItem('user', JSON.stringify(userData));
-      loadAllUsers();
-    }} />;
-  }
-
-  if (showUsersManagement && user.role === 'admin') {
-    return <UsersManagement token={user.username} onBack={() => {
-      setShowUsersManagement(false);
-      loadAllUsers();
-    }} />;
-  }
-
-  if (selectedProject) {
-    return <ProjectDetail
-      project={selectedProject}
-      user={user}
-      onBack={() => setSelectedProject(null)}
-      allUsers={allUsers}
-    />;
-  }
-
-  return <Dashboard
-    user={user}
-    onLogout={() => {
-      setUser(null);
-      localStorage.removeItem('user');
-    }}
-    onManageUsers={() => setShowUsersManagement(true)}
-    onSelectProject={setSelectedProject}
-    allUsers={allUsers}
-    projects={projects}
-    loadProjects={loadProjects}
-  />;
-}
-
-function Login({ onLogin }: { onLogin: (user: any) => void }) {
-  const [isRegister, setIsRegister] = useState(false);
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [email, setEmail] = useState('');
-  const [error, setError] = useState('');
-
-  const handleSubmit = async () => {
-    try {
-      if (isRegister) {
-        await axios.post(`${API_URL}/api/register`, { username, password, email });
-      }
-      const response = await axios.post(`${API_URL}/api/login`, { username, password });
-      if (response.data.success) {
-        onLogin(response.data);
-      }
-    } catch (err: any) {
-      setError(err.response?.data?.detail || 'Error');
-    }
-  };
-
-  return (
-    <Container maxWidth="sm" sx={{ mt: 8 }}>
-      <Card>
-        <CardContent>
-          <Typography variant="h4" gutterBottom align="center">
-            {isRegister ? 'Create Account' : 'Welcome Back'}
-          </Typography>
-          {error && (
-            <Typography color="error" align="center" gutterBottom>
-              {error}
-            </Typography>
-          )}
-          <TextField
-            fullWidth
-            label="Username"
-            margin="normal"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-          />
-          {isRegister && (
-            <TextField
-              fullWidth
-              label="Email"
-              type="email"
-              margin="normal"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-          )}
-          <TextField
-            fullWidth
-            label="Password"
-            type="password"
-            margin="normal"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-          <Button
-            fullWidth
-            variant="contained"
-            onClick={handleSubmit}
-            sx={{ mt: 2, mb: 1 }}
-          >
-            {isRegister ? 'Register' : 'Login'}
-          </Button>
-          <Button fullWidth onClick={() => setIsRegister(!isRegister)}>
-            {isRegister ? 'Back to Login' : 'Create Account'}
-          </Button>
-        </CardContent>
-      </Card>
-    </Container>
-  );
-}
-
-function Dashboard({ user, onLogout, onManageUsers, onSelectProject, allUsers, projects, loadProjects }: any) {
   const [openDialog, setOpenDialog] = useState(false);
   const [editingProject, setEditingProject] = useState<any>(null);
   const [formData, setFormData] = useState({
@@ -295,23 +151,6 @@ function Dashboard({ user, onLogout, onManageUsers, onSelectProject, allUsers, p
     }
   };
 
-  // Загружаем пользователей для Autocomplete
-  const [availableUsers, setAvailableUsers] = useState<string[]>([]);
-
-  useEffect(() => {
-    const loadUsers = async () => {
-      if (user?.username) {
-        try {
-          const response = await axios.get(`${API_URL}/api/all-users?username=${user.username}`);
-          setAvailableUsers(response.data);
-        } catch (error) {
-          console.error('Failed to load users:', error);
-        }
-      }
-    };
-    loadUsers();
-  }, [user]);
-
   return (
     <>
       <AppBar position="static">
@@ -332,6 +171,15 @@ function Dashboard({ user, onLogout, onManageUsers, onSelectProject, allUsers, p
           <NotificationCenter
             token={user.username}
             username={user.username}
+            projects={projects}
+            onNavigateToTask={navigateToTask}
+            onNavigateToTaskAndComment={navigateToTaskAndComment}
+            onNavigateToProject={(projectId: number, commentId?: number) => {
+              const project = projects.find((p: any) => p.id === projectId);
+              if (project) {
+                onSelectProject({ ...project, highlightCommentId: commentId, scrollToComments: true });
+              }
+            }}
           />
           <Button color="inherit" onClick={onLogout}>Logout</Button>
         </Toolbar>
@@ -468,7 +316,7 @@ function Dashboard({ user, onLogout, onManageUsers, onSelectProject, allUsers, p
             <Autocomplete
               multiple
               fullWidth
-              options={availableUsers}
+              options={allUsers}
               value={formData.assignees}
               onChange={(event, newValue) => {
                 setFormData({ ...formData, assignees: newValue });
@@ -493,105 +341,16 @@ function Dashboard({ user, onLogout, onManageUsers, onSelectProject, allUsers, p
   );
 }
 
-function ProjectDetail({ project, user, onBack, allUsers }: any) {
+function ProjectDetail({ project, user, onBack, allUsers, projects }: any) {
   const [activeTab, setActiveTab] = useState<'overview' | 'tasks' | 'comments' | 'stats' | 'gantt'>(
-    project.scrollToTask ? 'tasks' : 'overview'
+    project.scrollToComments ? 'comments' : (project.scrollToTask ? 'tasks' : 'overview')
   );
   const [selectedTaskId, setSelectedTaskId] = useState<number | undefined>(project.highlightTaskId);
   const [highlightedCommentId, setHighlightedCommentId] = useState<number | undefined>(project.highlightCommentId);
-  const [openTaskDetail, setOpenTaskDetail] = useState(project.openTaskDetail || false);
+  const [shouldOpenTaskDetail, setShouldOpenTaskDetail] = useState(project.openTaskDetail || false);
+  const commentRefs = useRef<{ [key: number]: HTMLDivElement | null }>({});
 
-  const handleTabChange = (tab: string) => {
-    setActiveTab(tab as any);
-    if (tab !== 'tasks') {
-      setOpenTaskDetail(false);
-      setSelectedTaskId(undefined);
-      setHighlightedCommentId(undefined);
-    }
-  };
+  const { navigateToTask, navigateToTaskAndComment, pendingTaskId, clearNavigation } = useNavigation();
 
-  const getRoleIcon = (role: string) => {
-    switch (role) {
-      case 'admin': return <AdminPanelSettingsIcon fontSize="small" />;
-      case 'editor': return <EditNoteIcon fontSize="small" />;
-      default: return <PersonIcon fontSize="small" />;
-    }
-  };
 
-  const getRoleName = (role: string) => {
-    switch (role) {
-      case 'admin': return 'Admin';
-      case 'editor': return 'Editor';
-      default: return 'User';
-    }
-  };
 
-  return (
-    <>
-      <AppBar position="static">
-        <Toolbar>
-          <Typography variant="h6" sx={{ flexGrow: 1 }}>
-            {project.name}
-          </Typography>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mr: 2 }}>
-            {getRoleIcon(user.role)}
-            <Typography>{user.username}</Typography>
-            <Chip label={getRoleName(user.role)} size="small" />
-          </Box>
-          <NotificationCenter
-            token={user.username}
-            username={user.username}
-          />
-          <Button color="inherit" onClick={onBack}>Back to Projects</Button>
-        </Toolbar>
-      </AppBar>
-      <Container sx={{ mt: 4 }}>
-        <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
-          <Button onClick={() => handleTabChange('overview')}>Overview</Button>
-          <Button onClick={() => handleTabChange('tasks')} startIcon={<ViewKanbanIcon />}>Tasks</Button>
-          <Button onClick={() => handleTabChange('comments')} startIcon={<CommentIcon />}>Comments</Button>
-          <Button onClick={() => handleTabChange('stats')} startIcon={<AssessmentIcon />}>Statistics</Button>
-          <Button onClick={() => handleTabChange('gantt')} startIcon={<TimelineIcon />}>Gantt</Button>
-        </Box>
-
-        {activeTab === 'overview' && (
-          <Card>
-            <CardContent>
-              <Typography variant="h5" gutterBottom>{project.name}</Typography>
-              <Typography variant="body1" sx={{ mb: 1 }}>{project.description || 'No description'}</Typography>
-              <Typography variant="body2" sx={{ mb: 0.5 }}>Status: {project.status}</Typography>
-              <Typography variant="body2" sx={{ mb: 0.5 }}>Deadline: {project.deadline ? new Date(project.deadline).toLocaleDateString() : 'Not set'}</Typography>
-              <Typography variant="body2" sx={{ mb: 0.5 }}>Created: {new Date(project.created_at).toLocaleString()}</Typography>
-              <Typography variant="body2" sx={{ mb: 0.5 }}>Created by: {project.created_by}</Typography>
-            </CardContent>
-          </Card>
-        )}
-
-        {activeTab === 'tasks' && (
-          <KanbanBoard
-            projectId={project.id}
-            token={user.username}
-            userRole={user.role}
-            initialTaskId={selectedTaskId}
-            highlightCommentId={highlightedCommentId}
-            autoOpen={openTaskDetail}
-          />
-        )}
-
-        {activeTab === 'comments' && (
-          <Comments projectId={project.id} token={user.username} username={user.username} />
-        )}
-
-        {activeTab === 'stats' && (
-          <ProjectStats projectId={project.id} token={user.username} />
-        )}
-
-        {activeTab === 'gantt' && (
-          <GanttChart projectId={project.id} token={user.username} userRole={user.role} />
-        )}
-      </Container>
-    </>
-  );
-}
-
-export default App;

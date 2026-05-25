@@ -8,7 +8,7 @@ import axios from 'axios';
 
 const API_URL = 'http://10.221.8.140:8000';
 
-function Comments({ projectId, token, username }: { projectId: number; token: string; username: string }) {
+function Comments({ projectId, token, username, commentRefs, highlightCommentId }: any) {
   const [comments, setComments] = useState<any[]>([]);
   const [newComment, setNewComment] = useState('');
   const [users, setUsers] = useState<string[]>([]);
@@ -21,6 +21,17 @@ function Comments({ projectId, token, username }: { projectId: number; token: st
     loadComments();
     loadUsers();
   }, []);
+
+  useEffect(() => {
+    if (highlightCommentId && commentRefs?.current[highlightCommentId]) {
+      const element = commentRefs.current[highlightCommentId];
+      element?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      element?.setAttribute('style', 'background-color: #ffeb3b; transition: background-color 0.5s');
+      setTimeout(() => {
+        element?.setAttribute('style', '');
+      }, 2000);
+    }
+  }, [highlightCommentId, comments]);
 
   const loadComments = async () => {
     try {
@@ -66,6 +77,7 @@ function Comments({ projectId, token, username }: { projectId: number; token: st
 
     const showMentions = lastAtIndex !== -1 &&
                          cursorPos > lastAtIndex &&
+                         (cursorPos - lastAtIndex) > 1 &&
                          !textBeforeCursor.substring(lastAtIndex + 1).includes(' ');
 
     if (showMentions) {
@@ -98,7 +110,16 @@ function Comments({ projectId, token, username }: { projectId: number; token: st
         <CardContent>
           <List>
             {comments.map(comment => (
-              <ListItem key={comment.id} alignItems="flex-start">
+              <ListItem
+                key={comment.id}
+                alignItems="flex-start"
+                ref={(el) => {
+                  if (commentRefs && comment.id) {
+                    commentRefs.current[comment.id] = el;
+                  }
+                }}
+                sx={{ transition: 'background-color 0.5s' }}
+              >
                 <ListItemAvatar>
                   <Avatar>{comment.user[0].toUpperCase()}</Avatar>
                 </ListItemAvatar>

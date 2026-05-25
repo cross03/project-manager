@@ -2,11 +2,12 @@ import React, { useState, useEffect } from 'react';
 import {
   Container, Typography, Card, CardContent, Button, Table, TableHead, TableRow,
   TableCell, TableBody, IconButton, Dialog, DialogTitle, DialogContent,
-  DialogActions, TextField, MenuItem, Chip, Box, Alert
+  DialogActions, TextField, Chip, Box, Alert
 } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
+import LockResetIcon from '@mui/icons-material/LockReset';
 import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
 import EditNoteIcon from '@mui/icons-material/EditNote';
 import PersonIcon from '@mui/icons-material/Person';
@@ -18,9 +19,11 @@ function UsersManagement({ token, onBack }: { token: string; onBack: () => void 
   const [users, setUsers] = useState<any[]>([]);
   const [openEditDialog, setOpenEditDialog] = useState(false);
   const [openCreateDialog, setOpenCreateDialog] = useState(false);
+  const [openPasswordDialog, setOpenPasswordDialog] = useState(false);
   const [selectedUser, setSelectedUser] = useState<any>(null);
   const [editForm, setEditForm] = useState({ email: '', role: '' });
   const [createForm, setCreateForm] = useState({ username: '', email: '', password: '', role: 'user' });
+  const [passwordForm, setPasswordForm] = useState({ new_password: '', confirm_password: '' });
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
@@ -28,8 +31,12 @@ function UsersManagement({ token, onBack }: { token: string; onBack: () => void 
   }, []);
 
   const loadUsers = async () => {
-    const response = await axios.get(`${API_URL}/api/users?username=${token}`);
-    setUsers(response.data);
+    try {
+      const response = await axios.get(`${API_URL}/api/users?username=${token}`);
+      setUsers(response.data);
+    } catch (error) {
+      console.error('Failed to load users:', error);
+    }
   };
 
   const handleEdit = (user: any) => {
@@ -38,12 +45,44 @@ function UsersManagement({ token, onBack }: { token: string; onBack: () => void 
     setOpenEditDialog(true);
   };
 
+  const handleChangePassword = (user: any) => {
+    setSelectedUser(user);
+    setPasswordForm({ new_password: '', confirm_password: '' });
+    setOpenPasswordDialog(true);
+  };
+
+  const handleSavePassword = async () => {
+    if (passwordForm.new_password !== passwordForm.confirm_password) {
+      setMessage({ type: 'error', text: 'Passwords do not match' });
+      return;
+    }
+    if (!passwordForm.new_password) {
+      setMessage({ type: 'error', text: 'Password is required' });
+      return;
+    }
+
+    try {
+      await axios.put(`${API_URL}/api/users/${selectedUser.username}/password?username=${token}`, {
+        new_password: passwordForm.new_password
+      });
+      setOpenPasswordDialog(false);
+      setMessage({ type: 'success', text: `Password for ${selectedUser.username} changed successfully!` });
+      setTimeout(() => setMessage(null), 3000);
+    } catch (error: any) {
+      setMessage({ type: 'error', text: error.response?.data?.detail || 'Error changing password' });
+    }
+  };
+
   const handleSaveEdit = async () => {
-    await axios.put(`${API_URL}/api/users/${selectedUser.username}?username=${token}`, editForm);
-    loadUsers();
-    setOpenEditDialog(false);
-    setMessage({ type: 'success', text: 'User updated successfully!' });
-    setTimeout(() => setMessage(null), 3000);
+    try {
+      await axios.put(`${API_URL}/api/users/${selectedUser.username}?username=${token}`, editForm);
+      await loadUsers();
+      setOpenEditDialog(false);
+      setMessage({ type: 'success', text: 'User updated successfully!' });
+      setTimeout(() => setMessage(null), 3000);
+    } catch (error: any) {
+      setMessage({ type: 'error', text: error.response?.data?.detail || 'Error updating user' });
+    }
   };
 
   const handleCreate = async () => {
@@ -54,7 +93,7 @@ function UsersManagement({ token, onBack }: { token: string; onBack: () => void 
 
     try {
       await axios.post(`${API_URL}/api/admin/users?admin_username=${token}`, createForm);
-      loadUsers();
+      await loadUsers();
       setOpenCreateDialog(false);
       setCreateForm({ username: '', email: '', password: '', role: 'user' });
       setMessage({ type: 'success', text: `User ${createForm.username} created successfully!` });
@@ -66,10 +105,14 @@ function UsersManagement({ token, onBack }: { token: string; onBack: () => void 
 
   const handleDelete = async (username: string) => {
     if (window.confirm(`Delete user ${username}?`)) {
-      await axios.delete(`${API_URL}/api/users/${username}?username=${token}`);
-      loadUsers();
-      setMessage({ type: 'success', text: `User ${username} deleted` });
-      setTimeout(() => setMessage(null), 3000);
+      try {
+        await axios.delete(`${API_URL}/api/users/${username}?username=${token}`);
+        await loadUsers();
+        setMessage({ type: 'success', text: `User ${username} deleted` });
+        setTimeout(() => setMessage(null), 3000);
+      } catch (error: any) {
+        setMessage({ type: 'error', text: error.response?.data?.detail || 'Error deleting user' });
+      }
     }
   };
 
@@ -145,6 +188,9 @@ function UsersManagement({ token, onBack }: { token: string; onBack: () => void 
                     <IconButton onClick={() => handleEdit(user)}>
                       <EditIcon />
                     </IconButton>
+                    <IconButton onClick={() => handleChangePassword(user)}>
+                      <LockResetIcon />
+                    </IconButton>
                     <IconButton onClick={() => handleDelete(user.username)}>
                       <DeleteIcon />
                     </IconButton>
@@ -156,6 +202,7 @@ function UsersManagement({ token, onBack }: { token: string; onBack: () => void 
         </CardContent>
       </Card>
 
+      {/* Edit Dialog */}
       <Dialog open={openEditDialog} onClose={() => setOpenEditDialog(false)} maxWidth="sm" fullWidth>
         <DialogTitle>Edit User: {selectedUser?.username}</DialogTitle>
         <DialogContent>
@@ -186,6 +233,7 @@ function UsersManagement({ token, onBack }: { token: string; onBack: () => void 
         </DialogActions>
       </Dialog>
 
+      {/* Create Dialog */}
       <Dialog open={openCreateDialog} onClose={() => setOpenCreateDialog(false)} maxWidth="sm" fullWidth>
         <DialogTitle>Create New User</DialogTitle>
         <DialogContent>
@@ -229,6 +277,33 @@ function UsersManagement({ token, onBack }: { token: string; onBack: () => void 
         <DialogActions>
           <Button onClick={() => setOpenCreateDialog(false)}>Cancel</Button>
           <Button onClick={handleCreate} variant="contained">Create</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Change Password Dialog */}
+      <Dialog open={openPasswordDialog} onClose={() => setOpenPasswordDialog(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Change Password for {selectedUser?.username}</DialogTitle>
+        <DialogContent>
+          <TextField
+            fullWidth
+            margin="dense"
+            label="New Password"
+            type="password"
+            value={passwordForm.new_password}
+            onChange={(e) => setPasswordForm({ ...passwordForm, new_password: e.target.value })}
+          />
+          <TextField
+            fullWidth
+            margin="dense"
+            label="Confirm Password"
+            type="password"
+            value={passwordForm.confirm_password}
+            onChange={(e) => setPasswordForm({ ...passwordForm, confirm_password: e.target.value })}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpenPasswordDialog(false)}>Cancel</Button>
+          <Button onClick={handleSavePassword} variant="contained">Save</Button>
         </DialogActions>
       </Dialog>
     </Container>

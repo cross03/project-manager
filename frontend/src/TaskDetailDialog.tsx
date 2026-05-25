@@ -7,6 +7,7 @@ import {
 import CloseIcon from '@mui/icons-material/Close';
 import LocalOfferIcon from '@mui/icons-material/LocalOffer';
 import SendIcon from '@mui/icons-material/Send';
+import ReplyIcon from '@mui/icons-material/Reply';
 import axios from 'axios';
 
 const API_URL = 'http://10.221.8.140:8000';
@@ -60,10 +61,10 @@ function AutoExpandingTextarea({ value, onChange, placeholder, margin = 'dense',
   );
 }
 
-// Компонент для комментария с подсветкой тегов
-function CommentWithMentions({ comment, onMentionClick }: any) {
+function CommentThread({ comment, onMentionClick, onReply, currentUser, isHighlighted, level = 0 }: any) {
+  const replies = comment.replies || [];
+
   const formatText = (text: string) => {
-    // Регулярное выражение для поиска @username (username может содержать буквы, цифры, точки, дефисы)
     const mentionRegex = /@([\w.]+)/g;
     const parts = [];
     let lastIndex = 0;
@@ -99,33 +100,78 @@ function CommentWithMentions({ comment, onMentionClick }: any) {
   };
 
   return (
-    <ListItem alignItems="flex-start">
-      <Avatar sx={{ mr: 2 }}>{comment.user[0].toUpperCase()}</Avatar>
-      <ListItemText
-        primary={comment.user}
-        secondary={
-          <React.Fragment>
-            <Typography component="span" variant="body2" color="text.primary" sx={{ wordBreak: 'break-word' }}>
-              {formatText(comment.text)}
-            </Typography>
-            <br />
-            <Typography component="span" variant="caption" color="text.secondary">
-              {new Date(comment.created_at).toLocaleString()}
-            </Typography>
-          </React.Fragment>
-        }
-      />
-    </ListItem>
+    <Box sx={{ ml: level * 4 }}>
+      <ListItem
+        alignItems="flex-start"
+        sx={{
+          position: 'relative',
+          backgroundColor: isHighlighted ? '#e3f2fd' : 'inherit',
+          transition: 'background-color 0.5s',
+          borderRadius: 1,
+          mb: 1,
+          borderLeft: level > 0 ? '2px solid #e0e0e0' : 'none'
+        }}
+        ref={isHighlighted ? (el) => {
+          if (el) {
+            setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'center' }), 300);
+          }
+        } : undefined}
+      >
+        <Avatar sx={{ mr: 2 }}>{comment.user[0].toUpperCase()}</Avatar>
+        <ListItemText
+          primary={comment.user}
+          secondary={
+            <React.Fragment>
+              <Typography component="span" variant="body2" color="text.primary" sx={{ wordBreak: 'break-word' }}>
+                {formatText(comment.text)}
+              </Typography>
+              <br />
+              <Typography component="span" variant="caption" color="text.secondary">
+                {new Date(comment.created_at).toLocaleString()}
+              </Typography>
+            </React.Fragment>
+          }
+        />
+        <IconButton
+          size="small"
+          onClick={() => onReply(comment.user, comment.id)}
+          sx={{ position: 'absolute', right: 8, top: 8 }}
+          title={`Reply to ${comment.user}`}
+        >
+          <ReplyIcon fontSize="small" />
+        </IconButton>
+      </ListItem>
+
+      {replies.length > 0 && (
+        <Box sx={{ ml: 2 }}>
+          {replies.map((reply: any) => (
+            <CommentThread
+              key={reply.id}
+              comment={reply}
+              onMentionClick={onMentionClick}
+              onReply={onReply}
+              currentUser={currentUser}
+              level={level + 1}
+            />
+          ))}
+        </Box>
+      )}
+    </Box>
   );
 }
 
-// Компонент для ввода комментария с подсказками @username
-function CommentInput({ onSend, users }: { onSend: (text: string) => void; users: string[] }) {
+function CommentInput({ onSend, users, replyTo, clearReply }: any) {
   const [value, setValue] = useState('');
   const [mentionOpen, setMentionOpen] = useState(false);
   const [mentionAnchor, setMentionAnchor] = useState<null | HTMLElement>(null);
   const [mentionQuery, setMentionQuery] = useState('');
   const [cursorPosition, setCursorPosition] = useState(0);
+
+  useEffect(() => {
+    if (replyTo) {
+      setValue(`@${replyTo.user} `);
+    }
+  }, [replyTo]);
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newValue = e.target.value;
@@ -135,7 +181,6 @@ function CommentInput({ onSend, users }: { onSend: (text: string) => void; users
     const textBeforeCursor = newValue.substring(0, cursorPos);
     const lastAtIndex = textBeforeCursor.lastIndexOf('@');
 
-    // Показываем подсказки сразу после @, даже если ничего не введено
     const showMentions = lastAtIndex !== -1 &&
                          cursorPos > lastAtIndex &&
                          !textBeforeCursor.substring(lastAtIndex + 1).includes(' ');
@@ -163,10 +208,10 @@ function CommentInput({ onSend, users }: { onSend: (text: string) => void; users
     if (value.trim()) {
       onSend(value);
       setValue('');
+      if (clearReply) clearReply();
     }
   };
 
-  // Фильтруем пользователей по введённому запросу (поддерживаем точки)
   const filteredUsers = users.filter((user: string) =>
     user.toLowerCase().includes(mentionQuery.toLowerCase()) && user !== ''
   );
@@ -185,10 +230,10 @@ function CommentInput({ onSend, users }: { onSend: (text: string) => void; users
       />
       <Button variant="contained" onClick={handleSend} endIcon={<SendIcon />}>Send</Button>
 
-      <Popper open={mentionOpen} anchorEl={mentionAnchor} placement="top-start" style={{ zIndex: 1300 }}>
+      <Popper open={mentionOpen} anchorEl={mentionAnchor} placement="top-start" style={{ zIndex: 10000 }}>
         <Paper sx={{ maxHeight: 200, overflow: 'auto' }}>
           {filteredUsers.length > 0 ? (
-            filteredUsers.map(user => (
+            filteredUsers.map((user: string) => (
               <Button
                 key={user}
                 onClick={() => selectUser(user)}
@@ -215,8 +260,9 @@ function CommentInput({ onSend, users }: { onSend: (text: string) => void; users
   );
 }
 
-export default function TaskDetailDialog({ task, open, onClose, onUpdate, token, users, userRole }: any) {
+export default function TaskDetailDialog({ task, open, onClose, onUpdate, token, users, userRole, highlightCommentId }: any) {
   const [comments, setComments] = useState<any[]>([]);
+  const [replyTo, setReplyTo] = useState<{ user: string; parentId: number } | null>(null);
   const [editForm, setEditForm] = useState({
     title: task?.title || '',
     description: task?.description || '',
@@ -228,6 +274,8 @@ export default function TaskDetailDialog({ task, open, onClose, onUpdate, token,
   });
   const [newTag, setNewTag] = useState('');
   const [error, setError] = useState('');
+  const [highlightedCommentId, setHighlightedCommentId] = useState<number | undefined>(highlightCommentId);
+  const [isHighlightCleared, setIsHighlightCleared] = useState(false);
 
   const canEdit = userRole === 'admin' || userRole === 'editor';
 
@@ -243,13 +291,36 @@ export default function TaskDetailDialog({ task, open, onClose, onUpdate, token,
         assignees: task.assignees || [],
         due_date: task.due_date || ''
       });
+      setHighlightedCommentId(highlightCommentId);
+      setIsHighlightCleared(false);
     }
-  }, [task, open]);
+  }, [task, open, highlightCommentId]);
 
   const loadComments = async () => {
     try {
       const response = await axios.get(`${API_URL}/api/tasks/${task.id}/comments?username=${token}`);
-      setComments(response.data);
+      const flatComments = response.data;
+      const commentMap = new Map();
+      const roots: any[] = [];
+
+      flatComments.sort((a: any, b: any) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+
+      flatComments.forEach((c: any) => {
+        commentMap.set(c.id, { ...c, replies: [] });
+      });
+
+      flatComments.forEach((c: any) => {
+        if (c.parent_id) {
+          const parent = commentMap.get(c.parent_id);
+          if (parent) {
+            parent.replies.push(commentMap.get(c.id));
+          }
+        } else {
+          roots.push(commentMap.get(c.id));
+        }
+      });
+
+      setComments(roots);
     } catch (err) {
       console.error('Failed to load comments:', err);
       setComments([]);
@@ -258,15 +329,24 @@ export default function TaskDetailDialog({ task, open, onClose, onUpdate, token,
 
   const sendComment = async (text: string) => {
     try {
-      await axios.post(`${API_URL}/api/comments?username=${token}`, {
+      const payload: any = {
         task_id: task.id,
         user: token,
         text: text
-      });
-      loadComments();
-    } catch (err) {
+      };
+      if (replyTo?.parentId) {
+        payload.parent_id = replyTo.parentId;
+      }
+      await axios.post(`${API_URL}/api/comments?username=${token}`, payload);
+      await loadComments();
+      setError('');
+      if (highlightedCommentId) {
+        setHighlightedCommentId(undefined);
+      }
+      setReplyTo(null);
+    } catch (err: any) {
       console.error('Failed to send comment:', err);
-      setError('Failed to send comment');
+      setError(err.response?.data?.detail || 'Failed to send comment');
     }
   };
 
@@ -296,12 +376,23 @@ export default function TaskDetailDialog({ task, open, onClose, onUpdate, token,
   };
 
   const handleMentionClick = (username: string) => {
-    console.log(`Clicked on @${username}`);
-    alert(`Send message to ${username}? (Will be implemented in next step)`);
+    setReplyTo({ user: username, parentId: 0 });
+  };
+
+  const handleReply = (username: string, parentId: number) => {
+    setReplyTo({ user: username, parentId });
+  };
+
+  const clearReply = () => {
+    setReplyTo(null);
+  };
+
+  const handleClose = () => {
+    onClose();
   };
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
+    <Dialog open={open} onClose={handleClose} maxWidth="md" fullWidth>
       <DialogTitle>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Typography variant="h6">
@@ -310,7 +401,7 @@ export default function TaskDetailDialog({ task, open, onClose, onUpdate, token,
               <Chip label="Read Only" size="small" sx={{ ml: 2 }} />
             )}
           </Typography>
-          <IconButton onClick={onClose}><CloseIcon /></IconButton>
+          <IconButton onClick={handleClose}><CloseIcon /></IconButton>
         </Box>
       </DialogTitle>
       <DialogContent dividers>
@@ -414,7 +505,14 @@ export default function TaskDetailDialog({ task, open, onClose, onUpdate, token,
         <Typography variant="h6" gutterBottom>Comments</Typography>
         <List>
           {comments.map((comment: any) => (
-            <CommentWithMentions key={comment.id} comment={comment} onMentionClick={handleMentionClick} />
+            <CommentThread
+              key={comment.id}
+              comment={comment}
+              onMentionClick={handleMentionClick}
+              onReply={handleReply}
+              currentUser={token}
+              isHighlighted={highlightedCommentId === comment.id && !isHighlightCleared}
+            />
           ))}
           {comments.length === 0 && (
             <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', py: 2 }}>
@@ -423,10 +521,10 @@ export default function TaskDetailDialog({ task, open, onClose, onUpdate, token,
           )}
         </List>
 
-        <CommentInput onSend={sendComment} users={users} />
+        <CommentInput onSend={sendComment} users={users} replyTo={replyTo} clearReply={clearReply} />
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose}>Cancel</Button>
+        <Button onClick={handleClose}>Close</Button>
         {canEdit && (
           <Button onClick={saveTask} variant="contained">Save Changes</Button>
         )}

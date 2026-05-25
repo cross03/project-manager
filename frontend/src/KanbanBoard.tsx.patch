@@ -1,0 +1,17 @@
+  const loadTasks = useCallback(async () => {
+    try {
+      const response = await axios.get(`${API_URL}/api/projects/${projectId}/tasks?username=${token}`);
+      setTasks(response.data);
+
+      // Если есть initialTaskId, всегда открываем задачу
+      if (initialTaskId) {
+        const task = response.data.find((t: any) => t.id === initialTaskId);
+        if (task) {
+          setSelectedTask({ ...task, highlightCommentId });
+          setOpenTaskDetail(true);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load tasks:', error);
+    }
+  }, [projectId, token, initialTaskId, highlightCommentId]);

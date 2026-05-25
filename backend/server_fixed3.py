@@ -310,3 +310,115 @@ if __name__ == "__main__":
     import uvicorn
     print("\n🚀 Server running on http://0.0.0.0:8000")
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
+# API Notifications
+@app.get("/api/notifications/{username}")
+def get_notifications(username: str, current_user: str):
+    users = load_data(USERS_FILE)
+    if current_user not in users:
+        raise HTTPException(401, "Unauthorized")
+    notifications = load_data(NOTIFICATIONS_FILE)
+    user_notifications = [n for n in notifications if n["user"] == username]
+    return user_notifications
+
+@app.post("/api/notifications")
+def create_notification(data: dict, current_user: str):
+    users = load_data(USERS_FILE)
+    if current_user not in users:
+        raise HTTPException(401, "Unauthorized")
+    notifications = load_data(NOTIFICATIONS_FILE)
+    new_notification = {
+        "id": len(notifications) + 1,
+        "user": data.get("user"),
+        "message": data.get("message"),
+        "read": False,
+        "type": data.get("type", "mention"),
+        "created_at": datetime.now().isoformat()
+    }
+    notifications.append(new_notification)
+    save_data(NOTIFICATIONS_FILE, notifications)
+    return new_notification
+
+@app.put("/api/notifications/{notification_id}/read")
+def mark_notification_read(notification_id: int, current_user: str):
+    users = load_data(USERS_FILE)
+    if current_user not in users:
+        raise HTTPException(401, "Unauthorized")
+    notifications = load_data(NOTIFICATIONS_FILE)
+    for n in notifications:
+        if n["id"] == notification_id and n["user"] == current_user:
+            n["read"] = True
+            save_data(NOTIFICATIONS_FILE, notifications)
+            return {"success": True}
+    raise HTTPException(404, "Notification not found")
+
+# API Messages
+@app.get("/api/messages/{username}")
+def get_messages(username: str, current_user: str):
+    users = load_data(USERS_FILE)
+    if current_user not in users:
+        raise HTTPException(401, "Unauthorized")
+    messages = load_data(MESSAGES_FILE)
+    user_messages = [m for m in messages if m["to_user"] == username or m["from_user"] == username]
+    return user_messages
+
+@app.post("/api/messages")
+def send_message(data: dict, current_user: str):
+    users = load_data(USERS_FILE)
+    if current_user not in users:
+        raise HTTPException(401, "Unauthorized")
+    messages = load_data(MESSAGES_FILE)
+    new_message = {
+        "id": len(messages) + 1,
+        "from_user": data.get("from_user"),
+        "to_user": data.get("to_user"),
+        "text": data.get("text"),
+        "read": False,
+        "created_at": datetime.now().isoformat()
+    }
+    messages.append(new_message)
+    save_data(MESSAGES_FILE, messages)
+
+    # Создаём уведомление для получателя
+    notifications = load_data(NOTIFICATIONS_FILE)
+    new_notification = {
+        "id": len(notifications) + 1,
+        "user": data.get("to_user"),
+        "message": f"New message from {data.get('from_user')}: {data.get('text')[:50]}",
+        "read": False,
+        "type": "message",
+        "created_at": datetime.now().isoformat()
+    }
+    notifications.append(new_notification)
+    save_data(NOTIFICATIONS_FILE, notifications)
+
+    return new_message
+
+@app.put("/api/messages/{message_id}/read")
+def mark_message_read(message_id: int, current_user: str):
+    users = load_data(USERS_FILE)
+    if current_user not in users:
+        raise HTTPException(401, "Unauthorized")
+    messages = load_data(MESSAGES_FILE)
+    for m in messages:
+        if m["id"] == message_id and m["to_user"] == current_user:
+            m["read"] = True
+            save_data(MESSAGES_FILE, messages)
+            return {"success": True}
+    raise HTTPException(404, "Message not found")
+
+# Helper function to create notification
+def create_notification(user: str, message: str, notif_type: str = "mention"):
+    notifications = load_data(NOTIFICATIONS_FILE)
+    new_id = len(notifications) + 1
+    new_notification = {
+        "id": new_id,
+        "user": user,
+        "message": message,
+        "read": False,
+        "type": notif_type,
+        "created_at": datetime.now().isoformat()
+    }
+    notifications.append(new_notification)
+    save_data(NOTIFICATIONS_FILE, notifications)
+    return new_notification

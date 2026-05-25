@@ -25,23 +25,14 @@ COMMENTS_FILE = "comments.json"
 MESSAGES_FILE = "messages.json"
 NOTIFICATIONS_FILE = "notifications.json"
 
-def load_dict(filename):
+def load_data(filename, default_dict=True):
     if os.path.exists(filename):
         with open(filename, 'r') as f:
             data = json.load(f)
-            if isinstance(data, list):
+            if default_dict and isinstance(data, list):
                 return {}
             return data
-    return {}
-
-def load_list(filename):
-    if os.path.exists(filename):
-        with open(filename, 'r') as f:
-            data = json.load(f)
-            if isinstance(data, dict):
-                return []
-            return data
-    return []
+    return {} if default_dict else []
 
 def save_data(filename, data):
     with open(filename, 'w') as f:
@@ -80,16 +71,6 @@ class RegisterData(BaseModel):
     password: str
     email: str
 
-class UserCreate(BaseModel):
-    username: str
-    password: str
-    email: str
-    role: str = "user"
-
-class UserUpdate(BaseModel):
-    email: Optional[str] = None
-    role: Optional[str] = None
-
 class ProjectData(BaseModel):
     id: Optional[int] = None
     name: str
@@ -110,12 +91,9 @@ class TaskData(BaseModel):
     due_date: Optional[str] = None
     created_by: str
 
-# Helper functions
-def extract_mentions(text: str):
-    return re.findall(r'@([\w.]+)', text)
-
-def create_notification(user: str, message: str, notif_type: str = "mention", task_id: int = None, project_id: int = None, comment_id: int = None):
-    notifications = load_list(NOTIFICATIONS_FILE)
+# Helper function to create notification
+def create_notification(user: str, message: str, notif_type: str = "mention"):
+    notifications = load_data(NOTIFICATIONS_FILE)
     new_id = len(notifications) + 1
     new_notification = {
         "id": new_id,
@@ -123,26 +101,27 @@ def create_notification(user: str, message: str, notif_type: str = "mention", ta
         "message": message,
         "read": False,
         "type": notif_type,
-        "task_id": task_id,
-        "project_id": project_id,
-        "comment_id": comment_id,
         "created_at": datetime.now().isoformat()
     }
     notifications.append(new_notification)
     save_data(NOTIFICATIONS_FILE, notifications)
     return new_notification
 
-# API Users
+# Extract mentions from text
+def extract_mentions(text: str):
+    return re.findall(r'@([\w.]+)', text)
+
+# API Users (основные endpoints)
 @app.post("/api/login")
 def login(data: LoginData):
-    users = load_dict(USERS_FILE)
+    users = load_data(USERS_FILE)
     if data.username in users and users[data.username]["password"] == data.password:
         return {"success": True, "username": data.username, "role": users[data.username]["role"], "email": users[data.username]["email"]}
     raise HTTPException(401, "Invalid credentials")
 
 @app.post("/api/register")
 def register(data: RegisterData):
-    users = load_dict(USERS_FILE)
+    users = load_data(USERS_FILE)
     if data.username in users:
         raise HTTPException(400, "Username exists")
     users[data.username] = {"password": data.password, "email": data.email, "role": "user", "created_at": datetime.now().isoformat()}
@@ -151,70 +130,27 @@ def register(data: RegisterData):
 
 @app.get("/api/all-users")
 def get_all_users(username: str):
-    users = load_dict(USERS_FILE)
+    users = load_data(USERS_FILE)
     if username not in users:
         raise HTTPException(401, "Unauthorized")
     return list(users.keys())
 
-@app.get("/api/users")
-def get_users_list(username: str):
-    users = load_dict(USERS_FILE)
+@app.get("/api/projects/{project_id}/users")
+def get_project_users(project_id: int, username: str):
+    users = load_data(USERS_FILE)
+    projects = load_data(PROJECTS_FILE, default_dict=False)
     if username not in users:
         raise HTTPException(401, "Unauthorized")
-
-    if users[username].get("role") == "admin":
-        return [{"username": u, "email": d["email"], "role": d.get("role", "user"), "created_at": d.get("created_at")}
-                for u, d in users.items()]
-    return [{"username": username, "email": users[username]["email"], "role": users[username].get("role", "user")}]
-
-@app.post("/api/admin/users")
-def create_user(data: UserCreate, admin_username: str):
-    users = load_dict(USERS_FILE)
-    if admin_username not in users or users[admin_username].get("role") != "admin":
-        raise HTTPException(403, "Only admin can create users")
-    if data.username in users:
-        raise HTTPException(400, "Username exists")
-    users[data.username] = {
-        "password": data.password,
-        "email": data.email,
-        "role": data.role,
-        "created_at": datetime.now().isoformat()
-    }
-    save_data(USERS_FILE, users)
-    return {"success": True, "message": f"User {data.username} created"}
-
-@app.put("/api/users/{target_username}")
-def update_user(target_username: str, data: UserUpdate, username: str):
-    users = load_dict(USERS_FILE)
-    if username not in users or users[username].get("role") != "admin":
-        raise HTTPException(403, "Permission denied")
-    if target_username not in users:
-        raise HTTPException(404, "User not found")
-    if data.email:
-        users[target_username]["email"] = data.email
-    if data.role:
-        users[target_username]["role"] = data.role
-    save_data(USERS_FILE, users)
-    return {"success": True}
-
-@app.delete("/api/users/{target_username}")
-def delete_user(target_username: str, username: str):
-    users = load_dict(USERS_FILE)
-    if username not in users or users[username].get("role") != "admin":
-        raise HTTPException(403, "Permission denied")
-    if target_username == username:
-        raise HTTPException(400, "Cannot delete yourself")
-    if target_username not in users:
-        raise HTTPException(404, "User not found")
-    del users[target_username]
-    save_data(USERS_FILE, users)
-    return {"success": True}
+    project = next((p for p in projects if p["id"] == project_id), None)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    return project.get("assignees", [])
 
 # API Projects
 @app.get("/api/projects")
 def get_projects(username: str):
-    users = load_dict(USERS_FILE)
-    projects = load_list(PROJECTS_FILE)
+    users = load_data(USERS_FILE)
+    projects = load_data(PROJECTS_FILE, default_dict=False)
     if username not in users:
         raise HTTPException(401, "Unauthorized")
     role = users[username].get("role", "user")
@@ -224,13 +160,13 @@ def get_projects(username: str):
 
 @app.post("/api/projects")
 def create_project(project: ProjectData, username: str):
-    users = load_dict(USERS_FILE)
+    users = load_data(USERS_FILE)
     if username not in users:
         raise HTTPException(401, "Unauthorized")
     role = users[username].get("role", "user")
     if role not in ["admin", "editor"]:
         raise HTTPException(403, "Permission denied")
-    projects = load_list(PROJECTS_FILE)
+    projects = load_data(PROJECTS_FILE, default_dict=False)
     new_id = max([p.get("id", 0) for p in projects] + [0]) + 1
     new_project = {
         "id": new_id,
@@ -248,13 +184,10 @@ def create_project(project: ProjectData, username: str):
 
 @app.put("/api/projects/{project_id}")
 def update_project(project_id: int, project: ProjectData, username: str):
-    users = load_dict(USERS_FILE)
+    users = load_data(USERS_FILE)
     if username not in users:
         raise HTTPException(401, "Unauthorized")
-    role = users[username].get("role", "user")
-    if role not in ["admin", "editor"]:
-        raise HTTPException(403, "Permission denied")
-    projects = load_list(PROJECTS_FILE)
+    projects = load_data(PROJECTS_FILE, default_dict=False)
     for i, p in enumerate(projects):
         if p["id"] == project_id:
             projects[i] = {**p, "name": project.name, "description": project.description, "status": project.status, "assignees": project.assignees, "deadline": project.deadline}
@@ -264,11 +197,11 @@ def update_project(project_id: int, project: ProjectData, username: str):
 
 @app.delete("/api/projects/{project_id}")
 def delete_project(project_id: int, username: str):
-    users = load_dict(USERS_FILE)
+    users = load_data(USERS_FILE)
     if username not in users or users[username].get("role") != "admin":
         raise HTTPException(403, "Permission denied")
-    projects = load_list(PROJECTS_FILE)
-    tasks = load_list(TASKS_FILE)
+    projects = load_data(PROJECTS_FILE, default_dict=False)
+    tasks = load_data(TASKS_FILE, default_dict=False)
     projects = [p for p in projects if p["id"] != project_id]
     tasks = [t for t in tasks if t["project_id"] != project_id]
     save_data(PROJECTS_FILE, projects)
@@ -278,10 +211,10 @@ def delete_project(project_id: int, username: str):
 # API Tasks
 @app.get("/api/projects/{project_id}/tasks")
 def get_tasks(project_id: int, username: str):
-    users = load_dict(USERS_FILE)
+    users = load_data(USERS_FILE)
     if username not in users:
         raise HTTPException(401, "Unauthorized")
-    tasks = load_list(TASKS_FILE)
+    tasks = load_data(TASKS_FILE, default_dict=False)
     role = users[username].get("role", "user")
     project_tasks = [t for t in tasks if t["project_id"] == project_id]
     if role in ["admin", "editor"]:
@@ -290,13 +223,10 @@ def get_tasks(project_id: int, username: str):
 
 @app.post("/api/tasks")
 def create_task(task: TaskData, username: str):
-    users = load_dict(USERS_FILE)
+    users = load_data(USERS_FILE)
     if username not in users:
         raise HTTPException(401, "Unauthorized")
-    role = users[username].get("role", "user")
-    if role not in ["admin", "editor"]:
-        raise HTTPException(403, "Permission denied")
-    tasks = load_list(TASKS_FILE)
+    tasks = load_data(TASKS_FILE, default_dict=False)
     new_id = max([t.get("id", 0) for t in tasks] + [0]) + 1
     new_task = {
         "id": new_id,
@@ -317,10 +247,10 @@ def create_task(task: TaskData, username: str):
 
 @app.put("/api/tasks/{task_id}")
 def update_task(task_id: int, task_data: dict, username: str):
-    users = load_dict(USERS_FILE)
+    users = load_data(USERS_FILE)
     if username not in users:
         raise HTTPException(401, "Unauthorized")
-    tasks = load_list(TASKS_FILE)
+    tasks = load_data(TASKS_FILE, default_dict=False)
     for i, t in enumerate(tasks):
         if t["id"] == task_id:
             tasks[i].update(task_data)
@@ -330,63 +260,41 @@ def update_task(task_id: int, task_data: dict, username: str):
 
 @app.delete("/api/tasks/{task_id}")
 def delete_task(task_id: int, username: str):
-    users = load_dict(USERS_FILE)
+    users = load_data(USERS_FILE)
     if username not in users:
         raise HTTPException(401, "Unauthorized")
-    tasks = load_list(TASKS_FILE)
-    # Удаляем задачу
+    tasks = load_data(TASKS_FILE, default_dict=False)
     tasks = [t for t in tasks if t["id"] != task_id]
     save_data(TASKS_FILE, tasks)
-
-    # Удаляем комментарии к этой задаче
-    comments = load_dict(COMMENTS_FILE)
-    key = f"task_{task_id}"
-    if key in comments:
-        del comments[key]
-        save_data(COMMENTS_FILE, comments)
-
     return {"success": True}
 
-@app.get("/api/tasks/{task_id}")
-def get_task_by_id(task_id: int, username: str):
-    users = load_dict(USERS_FILE)
-    if username not in users:
-        raise HTTPException(401, "Unauthorized")
-    tasks = load_list(TASKS_FILE)
-    task = next((t for t in tasks if t["id"] == task_id), None)
-    if not task:
-        raise HTTPException(404, "Task not found")
-    return task
-
-# API Comments for Tasks
+# API Comments for Tasks (with notifications)
 @app.get("/api/tasks/{task_id}/comments")
 def get_task_comments(task_id: int, username: str):
-    users = load_dict(USERS_FILE)
+    users = load_data(USERS_FILE)
     if username not in users:
         raise HTTPException(401, "Unauthorized")
-    comments = load_dict(COMMENTS_FILE)
+    comments = load_data(COMMENTS_FILE)
     key = f"task_{task_id}"
     return comments.get(key, [])
 
 @app.post("/api/comments")
 def create_task_comment(data: dict, username: str):
-    users = load_dict(USERS_FILE)
+    users = load_data(USERS_FILE)
     if username not in users:
         raise HTTPException(401, "Unauthorized")
 
-    comments = load_dict(COMMENTS_FILE)
+    comments = load_data(COMMENTS_FILE)
     task_id = data.get("task_id")
     key = f"task_{task_id}"
 
     if key not in comments:
         comments[key] = []
 
-    new_id = len(comments[key]) + 1
     new_comment = {
-        "id": new_id,
+        "id": len(comments[key]) + 1,
         "user": data.get("user"),
         "text": data.get("text"),
-        "parent_id": data.get("parent_id"),
         "created_at": datetime.now().isoformat()
     }
     comments[key].append(new_comment)
@@ -394,8 +302,7 @@ def create_task_comment(data: dict, username: str):
 
     # Создаём уведомления для упомянутых пользователей
     mentions = extract_mentions(data.get("text", ""))
-    tasks = load_list(TASKS_FILE)
-    task = next((t for t in tasks if t["id"] == task_id), None)
+    task = next((t for t in load_data(TASKS_FILE, default_dict=False) if t["id"] == task_id), None)
     task_title = task["title"] if task else "task"
 
     for mentioned_user in mentions:
@@ -403,9 +310,7 @@ def create_task_comment(data: dict, username: str):
             create_notification(
                 mentioned_user,
                 f"{username} mentioned you in task \"{task_title}\"",
-                "mention",
-                task_id=task_id,
-                comment_id=new_id
+                "mention"
             )
 
     return new_comment
@@ -413,32 +318,30 @@ def create_task_comment(data: dict, username: str):
 # API Comments for Projects
 @app.get("/api/projects/{project_id}/comments")
 def get_project_comments(project_id: int, username: str):
-    users = load_dict(USERS_FILE)
+    users = load_data(USERS_FILE)
     if username not in users:
         raise HTTPException(401, "Unauthorized")
-    comments = load_dict(COMMENTS_FILE)
+    comments = load_data(COMMENTS_FILE)
     key = f"project_{project_id}"
     return comments.get(key, [])
 
 @app.post("/api/comments-project")
 def create_project_comment(data: dict, username: str):
-    users = load_dict(USERS_FILE)
+    users = load_data(USERS_FILE)
     if username not in users:
         raise HTTPException(401, "Unauthorized")
 
-    comments = load_dict(COMMENTS_FILE)
+    comments = load_data(COMMENTS_FILE)
     project_id = data.get("project_id")
     key = f"project_{project_id}"
 
     if key not in comments:
         comments[key] = []
 
-    new_id = len(comments[key]) + 1
     new_comment = {
-        "id": new_id,
+        "id": len(comments[key]) + 1,
         "user": data.get("user"),
         "text": data.get("text"),
-        "parent_id": data.get("parent_id"),
         "created_at": datetime.now().isoformat()
     }
     comments[key].append(new_comment)
@@ -446,8 +349,7 @@ def create_project_comment(data: dict, username: str):
 
     # Создаём уведомления для упомянутых пользователей
     mentions = extract_mentions(data.get("text", ""))
-    projects = load_list(PROJECTS_FILE)
-    project = next((p for p in projects if p["id"] == project_id), None)
+    project = next((p for p in load_data(PROJECTS_FILE, default_dict=False) if p["id"] == project_id), None)
     project_name = project["name"] if project else "project"
 
     for mentioned_user in mentions:
@@ -455,9 +357,7 @@ def create_project_comment(data: dict, username: str):
             create_notification(
                 mentioned_user,
                 f"{username} mentioned you in project \"{project_name}\"",
-                "mention",
-                project_id=project_id,
-                comment_id=new_id
+                "mention"
             )
 
     return new_comment
@@ -465,22 +365,21 @@ def create_project_comment(data: dict, username: str):
 # API Notifications
 @app.get("/api/notifications/{username}")
 def get_notifications(username: str, current_user: str):
-    users = load_dict(USERS_FILE)
+    users = load_data(USERS_FILE)
     if current_user not in users:
         raise HTTPException(401, "Unauthorized")
-    notifications = load_list(NOTIFICATIONS_FILE)
-    user_notifications = [n for n in notifications if n.get("user") == username]
-    user_notifications.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+    notifications = load_data(NOTIFICATIONS_FILE)
+    user_notifications = [n for n in notifications if n["user"] == username]
     return user_notifications
 
 @app.put("/api/notifications/{notification_id}/read")
 def mark_notification_read(notification_id: int, current_user: str):
-    users = load_dict(USERS_FILE)
+    users = load_data(USERS_FILE)
     if current_user not in users:
         raise HTTPException(401, "Unauthorized")
-    notifications = load_list(NOTIFICATIONS_FILE)
+    notifications = load_data(NOTIFICATIONS_FILE)
     for n in notifications:
-        if n.get("id") == notification_id and n.get("user") == current_user:
+        if n["id"] == notification_id and n["user"] == current_user:
             n["read"] = True
             save_data(NOTIFICATIONS_FILE, notifications)
             return {"success": True}
@@ -489,23 +388,21 @@ def mark_notification_read(notification_id: int, current_user: str):
 # API Messages
 @app.get("/api/messages/{username}")
 def get_messages(username: str, current_user: str):
-    users = load_dict(USERS_FILE)
+    users = load_data(USERS_FILE)
     if current_user not in users:
         raise HTTPException(401, "Unauthorized")
-    messages = load_list(MESSAGES_FILE)
-    user_messages = [m for m in messages if m.get("to_user") == username or m.get("from_user") == username]
-    user_messages.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+    messages = load_data(MESSAGES_FILE)
+    user_messages = [m for m in messages if m["to_user"] == username or m["from_user"] == username]
     return user_messages
 
 @app.post("/api/messages")
 def send_message(data: dict, current_user: str):
-    users = load_dict(USERS_FILE)
+    users = load_data(USERS_FILE)
     if current_user not in users:
         raise HTTPException(401, "Unauthorized")
-    messages = load_list(MESSAGES_FILE)
-    new_id = len(messages) + 1
+    messages = load_data(MESSAGES_FILE)
     new_message = {
-        "id": new_id,
+        "id": len(messages) + 1,
         "from_user": data.get("from_user"),
         "to_user": data.get("to_user"),
         "text": data.get("text"),
@@ -515,6 +412,7 @@ def send_message(data: dict, current_user: str):
     messages.append(new_message)
     save_data(MESSAGES_FILE, messages)
 
+    # Создаём уведомление для получателя
     create_notification(
         data.get("to_user"),
         f"New message from {data.get('from_user')}: {data.get('text')[:50]}",
@@ -525,12 +423,12 @@ def send_message(data: dict, current_user: str):
 
 @app.put("/api/messages/{message_id}/read")
 def mark_message_read(message_id: int, current_user: str):
-    users = load_dict(USERS_FILE)
+    users = load_data(USERS_FILE)
     if current_user not in users:
         raise HTTPException(401, "Unauthorized")
-    messages = load_list(MESSAGES_FILE)
+    messages = load_data(MESSAGES_FILE)
     for m in messages:
-        if m.get("id") == message_id and m.get("to_user") == current_user:
+        if m["id"] == message_id and m["to_user"] == current_user:
             m["read"] = True
             save_data(MESSAGES_FILE, messages)
             return {"success": True}
@@ -540,26 +438,3 @@ if __name__ == "__main__":
     import uvicorn
     print("\n🚀 Server running on http://0.0.0.0:8000")
     uvicorn.run(app, host="0.0.0.0", port=8000)
-
-# API для смены пароля (только для админа)
-@app.put("/api/users/{target_username}/password")
-def change_user_password(target_username: str, password_data: dict, username: str):
-    users = load_dict(USERS_FILE)
-
-    # Проверяем, что текущий пользователь - админ
-    if username not in users or users[username].get("role") != "admin":
-        raise HTTPException(403, "Permission denied. Only admin can change passwords")
-
-    # Проверяем, что целевой пользователь существует
-    if target_username not in users:
-        raise HTTPException(404, "User not found")
-
-    # Меняем пароль
-    new_password = password_data.get("new_password")
-    if not new_password:
-        raise HTTPException(400, "New password is required")
-
-    users[target_username]["password"] = new_password
-    save_data(USERS_FILE, users)
-
-    return {"success": True, "message": f"Password for {target_username} changed successfully"}
